@@ -10,29 +10,64 @@ def getFloats(length):
     imgs.append(cv2.imread('./imgs/ref/%02d.png' % i))
   return  imgs
 
-def findFloat(imgs,confidence):
-  for i,img in enumerate(imgs):
-    btn = pyautogui.locateOnScreen(img,
-            confidence=confidence,
-            grayscale=True, 
-            region = (1010,435,650,650))
-    if btn:
-      x,y,w,h=btn
-      newImg = saveImg('./imgs/im1.png',x,y)
-      pyautogui.moveTo(x-100,y)
-      return newImg, x,y
-  return 0,0,0
+# def findFloat(imgs,confidence):
+#   for i,img in enumerate(imgs):
+#     btn = pyautogui.locateOnScreen(img,
+#             confidence=confidence,
+#             grayscale=True, 
+#             region = (1010,435,650,650))
+#     if btn:
+#       x,y,w,h=btn
+#       newImg = saveImg('./imgs/im1.png',x,y)
+#       pyautogui.moveTo(x-100,y)
+#       return newImg, x,y
+#   return 0,0,0
 
-def findTargetItem(item,shutDown = False):
-  pyautogui.screenshot('./imgs/item1.png', region=(1225,475,100,100))
-  item_= pyautogui.locateOnScreen(item,
-      confidence=0.4, 
-      region = (1225,475,100,100))
-  if item_:
-    print('I got the item!')
-    if shutDown: os.system('shutdown -s -f')
-    return True
-  return False
+import pyautogui
+
+def findFloat(imgs, confidence):
+    for i, img in enumerate(imgs):
+        try:
+            btn = pyautogui.locateOnScreen(img,
+                                           confidence=confidence,
+                                           grayscale=True,
+                                           region=(1010, 435, 650, 650))
+            if btn:
+                x, y, w, h = btn
+                newImg = saveImg('./imgs/im1.png', x, y)
+                pyautogui.moveTo(x - 100, y)
+                return newImg, x, y
+        except pyautogui.ImageNotFoundException:
+            # print(f"Image not found: {img}")
+            continue  # Move to the next image if the current one is not found
+    
+    # If no images are found, return (0, 0, 0)
+    return 0, 0, 0
+
+
+# def findTargetItem(item,shutDown = False):
+#   pyautogui.screenshot('./imgs/item1.png', region=(1225,475,100,100))
+#   item_= pyautogui.locateOnScreen(item,
+#       confidence=0.4, 
+#       region = (1225,475,100,100)
+#       )
+#   if item_:
+#     print('I got the item!')
+#     # if shutDown: os.system('shutdown -s -f')
+#     return True
+#   return False
+def findTargetItem(item, shutDown=False):
+    pyautogui.screenshot('./imgs/item1.png', region=(1225, 475, 100, 100))  # Capture a screenshot for debugging
+    try:
+        item_ = pyautogui.locateOnScreen(item, confidence=0.7, region=(1225, 475, 100, 100))
+        if item_:
+            print('I got the item!')
+            if shutDown: os.system('shutdown -s -f')  # Uncomment to shut down
+            return True
+    except pyautogui.ImageNotFoundException:
+        # print(f"Item not found: {item}")
+        return False
+    return False
 
 def compareImgHist(img,img2,index):
   hist1 = cvtImg(img)
@@ -51,8 +86,18 @@ def cvtImg(img):
   cv2.normalize(hist, hist, 0, 1, cv2.NORM_MINMAX)
   return hist
 
-def saveImg(location,x,y):
-  return pyautogui.screenshot(location, region=(x,y-5,80,80))
+# def saveImg(location,x,y):
+#   return pyautogui.screenshot(location, region=(x,y-5,80,80))
+
+def saveImg(location, x, y):
+    # Ensure x and y are integers, and cast them if needed
+    x, y = int(x), int(y)
+    
+    # Capture the screenshot with the given region
+    return pyautogui.screenshot(location, region=(x, y - 5, 80, 80))
+
+def saveScreen(location):
+    return pyautogui.screenshot(location)
 
 def applybite(key,lastApplyingTime,interval):
   if time.time()-lastApplyingTime > interval:

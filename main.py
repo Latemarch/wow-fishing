@@ -1,16 +1,24 @@
 import pyautogui
 import time
 import ftns
+import os
 time.sleep(2)
 
 imgs = ftns.getFloats(8)
 
 trycount = 0
+failCount = 0
 istargetItem = False 
 biteTime = time.time()
 
 while istargetItem==False:
   trycount += 1
+  failCount += 1
+  if failCount > 7:
+    ftns.saveScreen('./imgs/fail.png')
+    print("fail")
+    os.system('shutdown -s -f')
+    break
   print(trycount)
 
   istargetItem = ftns.findTargetItem('./imgs/item.png',shutDown=True)
@@ -25,7 +33,8 @@ while istargetItem==False:
 
   if not newImg:
     continue 
-    
+  
+  failCount = 0
   for i in range(70):
     time.sleep(0.2)
     targetImg=ftns.saveImg('./imgs/im2.png',x,y)
