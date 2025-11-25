@@ -29,11 +29,11 @@ while istargetItem==False:
   pyautogui.press('1')
   time.sleep(2)
   
-  newImg,x,y = ftns.findFloat(imgs,0.55)
+  newImg,x,y = ftns.findFloat(imgs,0.5)
 
   if not newImg:
     continue 
-  
+  1
   failCount = 0
   for i in range(70):
     time.sleep(0.2)
