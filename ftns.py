@@ -27,11 +27,12 @@ import pyautogui
 
 def findFloat(imgs, confidence):
     for i, img in enumerate(imgs):
+        print("IMAGE",i)
         try:
             btn = pyautogui.locateOnScreen(img,
                                            confidence=confidence,
                                            grayscale=True,
-                                           region=(1010, 435, 650, 650))
+                                           region=(1010, 435, 550, 450))
             if btn:
                 x, y, w, h = btn
                 newImg = saveImg('./imgs/im1.png', x, y)
