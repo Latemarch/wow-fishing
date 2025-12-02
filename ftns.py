@@ -3,31 +3,37 @@ import time
 import cv2
 import numpy as np
 import pyautogui
+import random
+# def getFloats(length):
+#   imgs=[]
+#   for i in range(length):
+#     imgs.append(cv2.imread('./imgs/ref/%02d.png' % i))
+#   return  imgs
 
-def getFloats(length):
+def getFloats(length=None):
   imgs=[]
+  
+  # length가 지정되지 않으면 imgs/ref 폴더의 PNG 파일 개수로 자동 설정
+  if length is None:
+    ref_dir = './imgs/ref'
+    if os.path.exists(ref_dir):
+      png_files = [f for f in os.listdir(ref_dir) if f.endswith('.png')]
+      length = len(png_files)
+    else:
+      length = 8  # 기본값
+  
   for i in range(length):
-    imgs.append(cv2.imread('./imgs/ref/%02d.png' % i))
-  return  imgs
-
-# def findFloat(imgs,confidence):
-#   for i,img in enumerate(imgs):
-#     btn = pyautogui.locateOnScreen(img,
-#             confidence=confidence,
-#             grayscale=True, 
-#             region = (1010,435,650,650))
-#     if btn:
-#       x,y,w,h=btn
-#       newImg = saveImg('./imgs/im1.png',x,y)
-#       pyautogui.moveTo(x-100,y)
-#       return newImg, x,y
-#   return 0,0,0
+    img = cv2.imread('./imgs/ref/%02d.png' % i)
+    if img is not None:
+      imgs.append(img)
+  
+  return imgs
 
 import pyautogui
 
-def findFloat(imgs, confidence):
+def findFloat(confidence):
+    imgs = getFloats()
     for i, img in enumerate(imgs):
-        print("IMAGE",i)
         try:
             btn = pyautogui.locateOnScreen(img,
                                            confidence=confidence,
@@ -36,8 +42,12 @@ def findFloat(imgs, confidence):
             if btn:
                 x, y, w, h = btn
                 newImg = saveImg('./imgs/im1.png', x, y)
+                # num = random.randint(0, 20)
+                # path = f'./imgs/ref/{num:02d}.png'
+                # saveImg(path, x, y)
                 pyautogui.moveTo(x - 100, y)
-                return newImg, x, y
+                behavior = saveBehavior('./imgs/behavior.png', x, y)
+                return newImg, behavior, x, y
         except pyautogui.ImageNotFoundException:
             # print(f"Image not found: {img}")
             continue  # Move to the next image if the current one is not found
@@ -91,6 +101,12 @@ def cvtImg(img):
 #   return pyautogui.screenshot(location, region=(x,y-5,80,80))
 
 def saveImg(location, x, y):
+    # Ensure x and y are integers, and cast them if needed
+    x, y = int(x), int(y)
+    
+    # Capture the screenshot with the given region
+    return pyautogui.screenshot(location, region=(x, y - 5, 100, 80))
+def saveBehavior(location, x, y):
     # Ensure x and y are integers, and cast them if needed
     x, y = int(x), int(y)
     

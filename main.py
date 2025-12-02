@@ -2,6 +2,7 @@ import pyautogui
 import time
 import ftns
 import os
+import random
 time.sleep(2)
 
 imgs = ftns.getFloats(8)
@@ -29,7 +30,7 @@ while istargetItem==False:
   pyautogui.press('1')
   time.sleep(2)
   
-  newImg,x,y = ftns.findFloat(imgs,0.5)
+  newImg,behavior,x,y = ftns.findFloat(0.55)
 
   if not newImg:
     continue 
@@ -37,14 +38,20 @@ while istargetItem==False:
   failCount = 0
   for i in range(70):
     time.sleep(0.2)
-    targetImg=ftns.saveImg('./imgs/im2.png',x,y)
-    similarity=ftns.compareImg(newImg,targetImg)
-    newImg = targetImg
+    targetImg=ftns.saveBehavior('./imgs/im2.png',x,y)
+    similarity=ftns.compareImg(behavior,targetImg)
+    behavior = targetImg
 
     if similarity > 3:
       pyautogui.moveTo(x+40,y+30)
       time.sleep(0.1)
       pyautogui.click()
+
+      num = random.randint(3, 20)
+      path = f'./imgs/ref/{num:02d}.png'
+      # ftns.saveImg(path, x, y)
+      newImg.save(path)
+
       break
 
 
