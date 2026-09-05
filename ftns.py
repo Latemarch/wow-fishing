@@ -4,6 +4,61 @@ import cv2
 import numpy as np
 import pyautogui
 import random
+
+
+def calibrateSearchRegion():
+  """WoW 창 위치/크기를 기준으로 찌 탐색 범위를 한 번 계산한다."""
+  screen_width, screen_height = pyautogui.size()
+  game_left = 0
+  game_top = 0
+  game_width = screen_width
+  game_height = screen_height
+  source = 'screen'
+
+  try:
+    import pygetwindow
+
+    title_keywords = ('world of warcraft', '월드 오브 워크래프트')
+    windows = [
+      window for window in pygetwindow.getAllWindows()
+      if window.visible
+      and window.width > 400
+      and window.height > 300
+      and any(keyword in window.title.lower() for keyword in title_keywords)
+    ]
+    if windows:
+      game_window = max(windows, key=lambda window: window.width * window.height)
+      game_left = int(game_window.left)
+      game_top = int(game_window.top)
+      game_width = int(game_window.width)
+      game_height = int(game_window.height)
+      source = game_window.title
+  except Exception as error:
+    print(f'[calibration] WoW window lookup failed: {error}')
+
+  # 크기만 기존 비율을 쓰고, 너비는 절반, 위치는 정중앙에서 위로 20% 이동한다.
+  width = max(1, round(game_width * (550 / 1920) / 2))
+  height = max(1, round(game_height * (450 / 1080)))
+  left = game_left + (game_width - width) // 2
+  top = game_top + (game_height - height) // 2
+  top -= round(game_height * 0.20)
+
+  right_limit = game_left + game_width
+  bottom_limit = game_top + game_height
+  left = max(game_left, min(left, right_limit - width))
+  top = max(game_top, min(top, bottom_limit - height))
+  width = max(1, min(width, right_limit - left))
+  height = max(1, min(height, bottom_limit - top))
+
+  region = (left, top, width, height)
+  print(
+    f'[calibration] source={source!r} '
+    f'window=({game_left}, {game_top}, {game_width}, {game_height}) '
+    f'search={region}'
+  )
+  return region
+
+
 # def getFloats(length):
 #   imgs=[]
 #   for i in range(length):
@@ -11,49 +66,44 @@ import random
 #   return  imgs
 
 def getFloats(length=None):
-  imgs=[]
-  
-  # length가 지정되지 않으면 imgs/ref 폴더의 PNG 파일 개수로 자동 설정
-  if length is None:
-    ref_dir = './imgs/ref'
-    if os.path.exists(ref_dir):
-      png_files = [f for f in os.listdir(ref_dir) if f.endswith('.png')]
-      length = len(png_files)
-    else:
-      length = 8  # 기본값
-  
-  for i in range(length):
-    img = cv2.imread('./imgs/ref/%02d.png' % i)
+  imgs = []
+  ref_dir = './imgs/ref'
+  if not os.path.isdir(ref_dir):
+    return imgs
+
+  # 번호가 중간에 빠져 있어도 실제 존재하는 PNG만 읽는다.
+  png_files = sorted(
+    f for f in os.listdir(ref_dir)
+    if f.lower().endswith('.png')
+  )
+  if length is not None:
+    png_files = png_files[:length]
+
+  for filename in png_files:
+    img = cv2.imread(os.path.join(ref_dir, filename))
     if img is not None:
       imgs.append(img)
-  
+
   return imgs
 
 import pyautogui
 
-def findFloat(confidence):
-    imgs = getFloats()
-    for i, img in enumerate(imgs):
-        try:
-            btn = pyautogui.locateOnScreen(img,
-                                           confidence=confidence,
-                                           grayscale=True,
-                                           region=(1010, 435, 550, 450))
-            if btn:
-                x, y, w, h = btn
-                newImg = saveImg('./imgs/im1.png', x, y)
-                # num = random.randint(0, 20)
-                # path = f'./imgs/ref/{num:02d}.png'
-                # saveImg(path, x, y)
-                pyautogui.moveTo(x - 100, y)
-                behavior = saveBehavior('./imgs/behavior.png', x, y)
-                return newImg, behavior, x, y
-        except pyautogui.ImageNotFoundException:
-            # print(f"Image not found: {img}")
-            continue  # Move to the next image if the current one is not found
-    
-    # If no images are found, return (0, 0, 0)
-    return 0, 0, 0
+def findFloat(confidence, region=(1010, 435, 550, 450)):
+    sticker = './imgs/bobber_sticker.png'
+    try:
+        btn = pyautogui.locateOnScreen(sticker,
+                                       confidence=confidence,
+                                       region=region)
+        if btn:
+            x, y, w, h = btn
+            newImg = saveImg('./imgs/im1.png', x, y)
+            pyautogui.moveTo(x - 100, y)
+            behavior = saveBehavior('./imgs/behavior.png', x, y)
+            return newImg, behavior, x, y
+    except pyautogui.ImageNotFoundException:
+        pass
+
+    return None, None, 0, 0
 
 
 # def findTargetItem(item,shutDown = False):
