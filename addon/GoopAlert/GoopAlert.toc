@@ -1,0 +1,7 @@
+## Interface: 120100
+## Title: GoopAlert
+## Notes: 끈적이 아이콘 + 고독어 개수 막대 (봇이 읽음)
+## Author: wow-fishing
+## Version: 1.1.0
+
+GoopAlert.lua

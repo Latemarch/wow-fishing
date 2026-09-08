@@ -49,15 +49,31 @@ def create_search_border(region):
   return root, bars
 
 
+def mark_consecutive_fail(fail_count, reason, limit=10):
+  fail_count += 1
+  print(f'[fish] consecutive fail {fail_count}/{limit} ({reason})')
+  if fail_count >= limit:
+    ftns.saveScreen('./imgs/fail.png')
+    print("fail")
+    os.system('shutdown -s -f')
+    return fail_count, True
+  return fail_count, False
+
+
 time.sleep(2)
 
 SEARCH_REGION = ftns.calibrateSearchRegion()
 overlay_root, overlay_bars = create_search_border(SEARCH_REGION)
 
 trycount = 0
-failCount = 0
+consecutiveFails = 0
 startedAt = time.time()
 biteTime = time.time()
+mail_cooldown_until = 0
+lastFishCount = ftns.readFishCount()
+if lastFishCount is None:
+  lastFishCount = 0
+print(f'[fish-count] baseline={lastFishCount}')
 next_shutdown = ftns.get_next_kst_shutdown()
 print(f"[session] will end at {next_shutdown.strftime('%Y-%m-%d %H:%M KST')}")
 
@@ -66,19 +82,19 @@ while True:
     break
 
   overlay_root.update()
-  if ftns.findCenterGoop():
+  if time.time() >= mail_cooldown_until and ftns.findCenterGoop():
     now = time.strftime('%Y-%m-%d %H:%M:%S')
     elapsed = int(time.time() - startedAt)
-    print(f'[STOP] Strange Goop found  time={now}  elapsed={elapsed}s')
-    break
+    print(f'[GOOP] found  time={now}  elapsed={elapsed}s')
+    if ftns.mailGoop():
+      print('[GOOP] mailed, resume fishing')
+      mail_cooldown_until = time.time() + 8
+    else:
+      print('[GOOP] mail failed, retry later')
+      time.sleep(2)
+    continue
 
   trycount += 1
-  failCount += 1
-  if failCount > 7:
-    ftns.saveScreen('./imgs/fail.png')
-    print("fail")
-    os.system('shutdown -s -f')
-    break
   print(trycount)
 
   biteTime = ftns.applybite('2',biteTime,600)
@@ -93,17 +109,37 @@ while True:
   if not newImg:
     continue
 
-  failCount = 0
-  if ftns.waitForSplash(timeout=14, on_tick=overlay_root.update):
-    pyautogui.moveTo(x,y+120)
-    time.sleep(0.1)
-    pyautogui.click()
-    time.sleep(1.0)
-    overlay_root.update()
-    if ftns.findCenterGoop():
-      now = time.strftime('%Y-%m-%d %H:%M:%S')
-      elapsed = int(time.time() - startedAt)
-      print(f'[STOP] Strange Goop found  time={now}  elapsed={elapsed}s')
+  if not ftns.waitForSplash(timeout=14, on_tick=overlay_root.update):
+    continue
+
+  pyautogui.moveTo(x,y+120)
+  time.sleep(0.1)
+  pyautogui.click()
+  time.sleep(1.0)
+  overlay_root.update()
+  fish_count = ftns.readFishCount()
+  if fish_count is not None and fish_count > lastFishCount:
+    print(f'[fish] success {lastFishCount} -> {fish_count}  consecutive fail reset')
+    lastFishCount = fish_count
+    consecutiveFails = 0
+  else:
+    stuck = lastFishCount if fish_count is None else fish_count
+    consecutiveFails, stop = mark_consecutive_fail(consecutiveFails, f'count={stuck}')
+    if stop:
       break
+    continue
+
+  overlay_root.update()
+  if time.time() >= mail_cooldown_until and ftns.findCenterGoop():
+    now = time.strftime('%Y-%m-%d %H:%M:%S')
+    elapsed = int(time.time() - startedAt)
+    print(f'[GOOP] found  time={now}  elapsed={elapsed}s')
+    if ftns.mailGoop():
+      print('[GOOP] mailed, resume fishing')
+      mail_cooldown_until = time.time() + 8
+    else:
+      print('[GOOP] mail failed, retry later')
+      time.sleep(2)
+    continue
 
 
