@@ -192,16 +192,34 @@ def findFloat(confidence, region=(1010, 435, 550, 450)):
 #     # if shutDown: os.system('shutdown -s -f')
 #     return True
 #   return False
+def findCenterGoop(image='./imgs/goop.png', confidence=0.7, size=220):
+    """화면 중앙에서 기묘한 끈적이 아이콘을 찾는다."""
+    screen_width, screen_height = pyautogui.size()
+    left = max(0, screen_width // 2 - size // 2)
+    top = max(0, screen_height // 2 - size // 2)
+    width = min(size, screen_width - left)
+    height = min(size, screen_height - top)
+    try:
+        found = pyautogui.locateOnScreen(
+            image,
+            confidence=confidence,
+            region=(left, top, width, height),
+        )
+        return found is not None
+    except pyautogui.ImageNotFoundException:
+        return False
+
+
 def findTargetItem(item, shutDown=False):
-    pyautogui.screenshot('./imgs/item1.png', region=(1225, 475, 100, 100))  # Capture a screenshot for debugging
+    pyautogui.screenshot('./imgs/item1.png', region=(1225, 475, 100, 100))
     try:
         item_ = pyautogui.locateOnScreen(item, confidence=0.7, region=(1225, 475, 100, 100))
         if item_:
             print('I got the item!')
-            if shutDown: os.system('shutdown -s -f')  # Uncomment to shut down
+            if shutDown:
+                os.system('shutdown -s -f')
             return True
     except pyautogui.ImageNotFoundException:
-        # print(f"Item not found: {item}")
         return False
     return False
 

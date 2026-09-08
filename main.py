@@ -56,16 +56,22 @@ overlay_root, overlay_bars = create_search_border(SEARCH_REGION)
 
 trycount = 0
 failCount = 0
-istargetItem = False 
+startedAt = time.time()
 biteTime = time.time()
 next_shutdown = ftns.get_next_kst_shutdown()
 print(f"[session] will end at {next_shutdown.strftime('%Y-%m-%d %H:%M KST')}")
 
-while istargetItem==False:
+while True:
   if ftns.shutdown_if_kst_target(next_shutdown):
     break
 
   overlay_root.update()
+  if ftns.findCenterGoop():
+    now = time.strftime('%Y-%m-%d %H:%M:%S')
+    elapsed = int(time.time() - startedAt)
+    print(f'[STOP] Strange Goop found  time={now}  elapsed={elapsed}s')
+    break
+
   trycount += 1
   failCount += 1
   if failCount > 7:
@@ -75,7 +81,6 @@ while istargetItem==False:
     break
   print(trycount)
 
-  istargetItem = ftns.findTargetItem('./imgs/item.png',shutDown=True)
   biteTime = ftns.applybite('2',biteTime,600)
 
   time.sleep(1)
@@ -93,5 +98,12 @@ while istargetItem==False:
     pyautogui.moveTo(x,y+120)
     time.sleep(0.1)
     pyautogui.click()
+    time.sleep(1.0)
+    overlay_root.update()
+    if ftns.findCenterGoop():
+      now = time.strftime('%Y-%m-%d %H:%M:%S')
+      elapsed = int(time.time() - startedAt)
+      print(f'[STOP] Strange Goop found  time={now}  elapsed={elapsed}s')
+      break
 
 
