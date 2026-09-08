@@ -58,8 +58,13 @@ trycount = 0
 failCount = 0
 istargetItem = False 
 biteTime = time.time()
+next_shutdown = ftns.get_next_kst_shutdown()
+print(f"[session] will end at {next_shutdown.strftime('%Y-%m-%d %H:%M KST')}")
 
 while istargetItem==False:
+  if ftns.shutdown_if_kst_target(next_shutdown):
+    break
+
   overlay_root.update()
   trycount += 1
   failCount += 1
@@ -85,7 +90,7 @@ while istargetItem==False:
 
   failCount = 0
   if ftns.waitForSplash(timeout=14, on_tick=overlay_root.update):
-    pyautogui.moveTo(x,y+100)
+    pyautogui.moveTo(x,y+120)
     time.sleep(0.1)
     pyautogui.click()
 

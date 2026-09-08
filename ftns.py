@@ -4,6 +4,13 @@ import cv2
 import numpy as np
 import pyautogui
 import random
+from datetime import datetime, timedelta, timezone
+
+try:
+  from zoneinfo import ZoneInfo
+  KST = ZoneInfo("Asia/Seoul")
+except Exception:
+  KST = timezone(timedelta(hours=9))
 
 
 def calibrateSearchRegion():
@@ -88,22 +95,90 @@ def getFloats(length=None):
 
 import pyautogui
 
-def findFloat(confidence, region=(1010, 435, 550, 450)):
-    sticker = './imgs/bobber_sticker.png'
-    try:
-        btn = pyautogui.locateOnScreen(sticker,
-                                       confidence=confidence,
-                                       region=region)
-        if btn:
-            x, y, w, h = btn
-            newImg = saveImg('./imgs/im1.png', x, y)
-            pyautogui.moveTo(x, y)
-            behavior = saveBehavior('./imgs/behavior.png', x, y)
-            return newImg, behavior, x, y
-    except pyautogui.ImageNotFoundException:
-        pass
 
+def _sticker_template_and_mask(path='./imgs/bobber_sticker.png'):
+  """훅만 매칭하도록 템플릿+마스크를 만든다.
+
+  bobber_sticker.png 배경이 불투명 회색-파란색이라 낚시터 물이 바뀌면
+  locateOnScreen이 실패한다. 알파가 있으면 그걸 쓰고, 없으면 모서리 배경을 제외한다.
+  """
+  img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+  if img is None:
+    raise FileNotFoundError(path)
+
+  if img.ndim == 2:
+    bgr = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+    mask = np.full(img.shape, 255, dtype=np.uint8)
+  elif img.shape[2] == 4 and int(img[:, :, 3].min()) < 255:
+    bgr = img[:, :, :3]
+    mask = (img[:, :, 3] > 128).astype(np.uint8) * 255
+  else:
+    bgr = img[:, :, :3] if img.ndim == 3 else img
+    h, w = bgr.shape[:2]
+    corners = np.concatenate([
+      bgr[0:3, 0:3].reshape(-1, 3),
+      bgr[0:3, w - 3:w].reshape(-1, 3),
+      bgr[h - 3:h, 0:3].reshape(-1, 3),
+      bgr[h - 3:h, w - 3:w].reshape(-1, 3),
+    ])
+    bg = corners.mean(axis=0)
+    diff = np.linalg.norm(bgr.astype(np.float32) - bg, axis=2)
+    mask = (diff > 25).astype(np.uint8) * 255
+
+  if cv2.countNonZero(mask) == 0:
+    mask = np.full(bgr.shape[:2], 255, dtype=np.uint8)
+  return bgr, mask
+
+
+def findFloat(confidence, region=(1010, 435, 550, 450)):
+  """탐색 범위 안에서 bobber_sticker를 여러 배율·배경마스크로 찾는다."""
+  left, top, width, height = [int(v) for v in region]
+  try:
+    template, mask = _sticker_template_and_mask()
+  except FileNotFoundError:
+    print('[findFloat] sticker template missing')
     return None, None, 0, 0
+
+  screenshot = pyautogui.screenshot(region=(left, top, width, height))
+  haystack = cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2BGR)
+
+  best_score = -1.0
+  best_loc = None
+  best_size = None
+  for scale in (0.6, 0.75, 0.9, 1.0, 1.15, 1.3, 1.5, 1.75, 2.0):
+    tw = max(1, int(round(template.shape[1] * scale)))
+    th = max(1, int(round(template.shape[0] * scale)))
+    if tw >= width or th >= height:
+      continue
+
+    scaled = cv2.resize(template, (tw, th), interpolation=cv2.INTER_AREA)
+    scaled_mask = cv2.resize(mask, (tw, th), interpolation=cv2.INTER_NEAREST)
+    if cv2.countNonZero(scaled_mask) == 0:
+      continue
+
+    result = cv2.matchTemplate(
+      haystack, scaled, cv2.TM_CCORR_NORMED, mask=scaled_mask
+    )
+    _min_val, max_val, _min_loc, max_loc = cv2.minMaxLoc(result)
+    if max_val > best_score:
+      best_score = float(max_val)
+      best_loc = max_loc
+      best_size = (tw, th)
+
+  if best_loc is None or best_score < confidence:
+    print(f'[findFloat] no match (best={best_score:.3f}, need>={confidence})')
+    return None, None, 0, 0
+
+  x = left + int(best_loc[0])
+  y = top + int(best_loc[1])
+  tw, th = best_size
+  cx, cy = x + tw // 2, y + th // 2
+  print(f'[findFloat] match={best_score:.3f} at ({x},{y}) size={best_size} center=({cx},{cy})')
+
+  newImg = saveImg('./imgs/im1.png', x, y)
+  pyautogui.moveTo(cx, cy)
+  behavior = saveBehavior('./imgs/behavior.png', x, y)
+  return newImg, behavior, x, y
 
 
 # def findTargetItem(item,shutDown = False):
@@ -346,4 +421,30 @@ def waitForSplash(
         baseline.pop(0)
 
   print('[audio] splash timeout')
+  return False
+
+
+def get_next_kst_shutdown(session_hours=6, shutdown_hour=None):
+  """세션 종료 시각(KST)을 계산한다.
+
+  session_hours: 시작 시각부터 몇 시간 뒤 (기본 6)
+  shutdown_hour: 0-23이면 그날/다음날 해당 시각 정각
+  """
+  now = datetime.now(KST)
+  if shutdown_hour is None:
+    return now + timedelta(hours=session_hours)
+  if not isinstance(shutdown_hour, int):
+    raise ValueError("shutdown_hour must be an int or None")
+  target = now.replace(hour=shutdown_hour, minute=0, second=0, microsecond=0)
+  if now >= target:
+    target += timedelta(days=1)
+  return target
+
+
+def shutdown_if_kst_target(next_shutdown):
+  """종료 시각이 되면 PC를 끄고 True를 반환한다."""
+  if datetime.now(KST) >= next_shutdown:
+    print(f"[session] {next_shutdown.strftime('%Y-%m-%d %H:%M KST')} reached, shutting down")
+    os.system('shutdown -s -f')
+    return True
   return False
