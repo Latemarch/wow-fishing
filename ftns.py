@@ -283,6 +283,63 @@ def findCenterGoop(image='./imgs/goop.png', confidence=0.82, size=None):
     return True
 
 
+def _load_dotenv(path='.env'):
+  """간단한 KEY=VALUE .env 로더 (python-dotenv 없이)."""
+  if not os.path.isfile(path):
+    return
+  try:
+    with open(path, encoding='utf-8') as f:
+      for line in f:
+        line = line.strip()
+        if not line or line.startswith('#') or '=' not in line:
+          continue
+        key, value = line.split('=', 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key:
+          os.environ[key] = value
+  except OSError as error:
+    print(f'[telegram] .env read failed: {error}')
+
+
+def notifyTelegram(text, token=None, chat_id=None):
+  """텔레그램으로 텍스트를 보낸다. 성공 시 True.
+
+  환경변수 또는 .env:
+    TELEGRAM_BOT_TOKEN
+    TELEGRAM_CHAT_ID
+  """
+  import json
+  import urllib.error
+  import urllib.parse
+  import urllib.request
+
+  _load_dotenv()
+  token = token or os.environ.get('TELEGRAM_BOT_TOKEN', '').strip()
+  chat_id = chat_id or os.environ.get('TELEGRAM_CHAT_ID', '').strip()
+  if not token or not chat_id or not chat_id.lstrip('-').isdigit():
+    print('[telegram] TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID 가 필요합니다')
+    return False
+
+  url = f'https://api.telegram.org/bot{token}/sendMessage'
+  payload = urllib.parse.urlencode({
+    'chat_id': chat_id,
+    'text': text,
+  }).encode('utf-8')
+  req = urllib.request.Request(url, data=payload, method='POST')
+  try:
+    with urllib.request.urlopen(req, timeout=10) as resp:
+      body = json.loads(resp.read().decode('utf-8'))
+    if body.get('ok'):
+      print('[telegram] sent')
+      return True
+    print(f'[telegram] api error: {body}')
+    return False
+  except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as error:
+    print(f'[telegram] send failed: {error}')
+    return False
+
+
 def findLootNearCursor(image='./imgs/loot_header.png', confidence=0.78, appear_after=0.2, visible_until=1.15):
   """자동획득 시 클릭 후 0.3~1초만 보이는 전리품 창을 빠르게 폴링한다."""
   if not os.path.isfile(image) and os.path.isfile('./imgs/loot.png'):

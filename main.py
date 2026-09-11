@@ -86,6 +86,7 @@ while True:
     now = time.strftime('%Y-%m-%d %H:%M:%S')
     elapsed = int(time.time() - startedAt)
     print(f'[GOOP] found  time={now}  elapsed={elapsed}s')
+    ftns.notifyTelegram(f'기묘한 끈적이 획득! time={now} elapsed={elapsed}s')
     if ftns.mailGoop():
       print('[GOOP] mailed, resume fishing')
       mail_cooldown_until = time.time() + 8
@@ -107,6 +108,9 @@ while True:
   newImg, _, x, y = ftns.findFloat(0.55, SEARCH_REGION)
 
   if not newImg:
+    consecutiveFails, stop = mark_consecutive_fail(consecutiveFails, 'float_not_found')
+    if stop:
+      break
     continue
 
   if not ftns.waitForSplash(timeout=14, on_tick=overlay_root.update):
@@ -115,15 +119,25 @@ while True:
   pyautogui.moveTo(x,y+120)
   time.sleep(0.1)
   pyautogui.click()
-  time.sleep(1.0)
-  overlay_root.update()
-  fish_count = ftns.readFishCount()
+  # 룻/가방 반영이 늦을 수 있어 여러 번 읽는다.
+  fish_count = None
+  for _ in range(6):
+    time.sleep(0.45)
+    overlay_root.update()
+    fish_count = ftns.readFishCount()
+    if fish_count is not None and fish_count > lastFishCount:
+      break
+
   if fish_count is not None and fish_count > lastFishCount:
     print(f'[fish] success {lastFishCount} -> {fish_count}  consecutive fail reset')
     lastFishCount = fish_count
     consecutiveFails = 0
   else:
     stuck = lastFishCount if fish_count is None else fish_count
+    print(
+      f'[fish] count unchanged ({stuck}). '
+      'GoopAlert FISH_ITEM_IDS에 없는 물고기이거나 룻 실패. /goopalert 로 확인'
+    )
     consecutiveFails, stop = mark_consecutive_fail(consecutiveFails, f'count={stuck}')
     if stop:
       break
@@ -134,6 +148,7 @@ while True:
     now = time.strftime('%Y-%m-%d %H:%M:%S')
     elapsed = int(time.time() - startedAt)
     print(f'[GOOP] found  time={now}  elapsed={elapsed}s')
+    ftns.notifyTelegram(f'기묘한 끈적이 획득! time={now} elapsed={elapsed}s')
     if ftns.mailGoop():
       print('[GOOP] mailed, resume fishing')
       mail_cooldown_until = time.time() + 8
