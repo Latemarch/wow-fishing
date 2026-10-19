@@ -1,0 +1,10 @@
+## Interface: 120105
+## Title: FishingAssist
+## Notes: Status LEDs for external fishing helper
+## Author: wow-fishing
+## Version: 1.0.3
+## DefaultState: enabled
+## LoadOnDemand: 0
+## SavedVariables: FishingAssistDB
+
+FishingAssist.lua
