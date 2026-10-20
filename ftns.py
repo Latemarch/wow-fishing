@@ -1410,12 +1410,12 @@ def logoutWow(key='3'):
 
 
 def _char_select_region():
-  """캐릭터 목록 검색 영역 (우측 70–100%, 하단 절반)."""
+  """캐릭터 목록 검색 영역 (우측 70–100%, 상단 절반)."""
   left, top, width, height = _wow_window_rect()
   x0 = left + int(width * 0.70)
-  y0 = top + int(height * 0.50)
+  y0 = top + int(height * 0.05)
   region_w = max(1, left + width - x0)
-  region_h = max(1, top + height - y0)
+  region_h = max(1, int(height * 0.50))
   return _clamp_region((x0, y0, region_w, region_h))
 
 
