@@ -5,6 +5,7 @@ import ftns
 CHARS = [
   ('주술사', './imgs/shamon.png'),
   ('마법사', './imgs/mage.png'),
+  ('사제', './imgs/priest.png'),
 ]
 
 print('WoW 캐릭터 선택 화면에 두세요. 3초 후 시작...')
@@ -26,24 +27,9 @@ for name, path in CHARS:
   center, score, scale = found
   print(f'{name}: score={score:.3f} scale={scale:.2f} center={center}')
 
-print('--- select 마법사 (verified, no Enter) ---')
-ok_mage = ftns.selectCharVerified(
-  './imgs/mage.png',
-  char_name='마법사',
-  other_chars=[('주술사', './imgs/shamon.png')],
-  timeout=8.0,
-  confidence=0.50,
-)
-print(f'mage select ok={ok_mage}')
-time.sleep(1.0)
-
-print('--- select 주술사 (verified, no Enter) ---')
-ok_sham = ftns.selectCharVerified(
-  './imgs/shamon.png',
-  char_name='주술사',
-  other_chars=[('마법사', './imgs/mage.png')],
-  timeout=8.0,
-  confidence=0.50,
-)
-print(f'shaman select ok={ok_sham}')
+for name, path in CHARS:
+  print(f'--- click {name} (no Enter) ---')
+  ok = ftns.clickCharSelect(path, char_name=name, timeout=8.0, confidence=0.50)
+  print(f'{name} ok={ok}')
+  time.sleep(0.8)
 print('done (Enter not pressed)')

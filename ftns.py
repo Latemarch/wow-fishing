@@ -1403,14 +1403,19 @@ def saveScreen(location):
 
 
 def logoutWow(key='3'):
-  """로그아웃 매크로 키를 눌러 캐릭터 선택 화면으로 나간다."""
+  """로그아웃 매크로 키를 눌러 캐릭터 선택 화면으로 나간다.
+
+  매크로가 캐릭터 선택 화면까지 가는 데 약 40초 걸린다.
+  이 대기 동안에는 캐릭터를 찾지 않는다.
+  """
   print(f'[session] logout key={key}')
   pyautogui.press(key)
-  time.sleep(2.0)
+  print('[session] logout in progress, wait 40s before character search')
+  time.sleep(40.0)
 
 
 def _char_select_region():
-  """캐릭터 목록 검색 영역 (우측 70–100%, 상단 절반)."""
+  """캐릭터 목록은 게임 창 우측 상단이다. 오른쪽 30%, 위쪽 절반만 본다."""
   left, top, width, height = _wow_window_rect()
   x0 = left + int(width * 0.70)
   y0 = top + int(height * 0.05)
@@ -1420,30 +1425,30 @@ def _char_select_region():
 
 
 def findCharSelect(image='./imgs/shamon.png', confidence=0.55, timeout=45.0):
-  """캐릭터 선택 화면에서 대상 캐릭터를 찾는다."""
+  """우측 상단에서 클래스 글자 색으로 대상 캐릭터를 찾는다."""
   region = _char_select_region()
   print(f'[session] char select search region={region}')
   deadline = time.time() + timeout
   best = None
   while time.time() < deadline:
-    for use_gray in (False, True):
-      found = _match_template(
-        image,
-        region=region,
-        confidence=confidence,
-        scales=_ui_scales(),
-        use_gray=use_gray,
+    found = _match_template(
+      image,
+      region=region,
+      confidence=confidence,
+      scales=_ui_scales(),
+      use_gray=False,
+    )
+    if found is None:
+      time.sleep(0.4)
+      continue
+    if found[0] is not None:
+      print(
+        f'[session] char matched score={found[1]:.3f} '
+        f'scale={found[2]:.2f} gray=False at={found[0]}'
       )
-      if found is None:
-        continue
-      if found[0] is not None:
-        print(
-          f'[session] char matched score={found[1]:.3f} '
-          f'scale={found[2]:.2f} gray={use_gray} at={found[0]}'
-        )
-        return found[0]
-      if best is None or found[1] > best[1]:
-        best = found
+      return found[0]
+    if best is None or found[1] > best[1]:
+      best = found
     time.sleep(0.4)
   if best is not None:
     print(f'[session] char not found best={best[1]:.3f} need>={confidence}')
@@ -1579,31 +1584,19 @@ def reconnectAfterFail(
   keep_alive_chars=None,
   keep_alive_every_min=5,
 ):
-  """로그아웃 후 대기 → 지정 캐릭 클릭 → Enter로 접속.
+  """로그아웃 후 대기 → 우측 상단 클래스 글자 클릭 → Enter로 접속.
 
-  대기 중 AFK 방지는 대상 캐릭만 주기적으로 다시 클릭한다.
+  대기 중 AFK 방지는 대상 클래스 글자만 다시 클릭한다.
+  다른 클래스 점수가 더 높아도 대상 좌표 클릭을 막지 않는다.
   """
   wait_minutes = max(0, int(wait_minutes))
   if not os.path.isfile(image):
     print(f'[session] reconnect image missing: {image}')
     return False
 
-  if keep_alive_chars is None:
-    keep_alive_chars = [
-      ('주술사', './imgs/shamon.png'),
-      ('마법사', './imgs/mage.png'),
-    ]
-  other_chars = [
-    pair for pair in keep_alive_chars if pair[1] != image
-  ]
-
   print(f'[session] waiting {wait_minutes} min before reconnect ({char_name})')
-  selectCharVerified(
-    image,
-    char_name=char_name,
-    other_chars=other_chars,
-    timeout=15.0,
-    confidence=0.50,
+  clickCharSelect(
+    image, char_name=char_name, timeout=15.0, confidence=0.50,
   )
 
   for minute in range(wait_minutes):
@@ -1617,27 +1610,14 @@ def reconnectAfterFail(
       and elapsed < wait_minutes
     ):
       print(f'[session] keep-alive reselect {char_name} at {elapsed}min')
-      selectCharVerified(
-        image,
-        char_name=char_name,
-        other_chars=other_chars,
-        timeout=12.0,
-        confidence=0.50,
+      clickCharSelect(
+        image, char_name=char_name, timeout=12.0, confidence=0.50,
       )
 
   time.sleep(2.0)
-  selected = selectCharVerified(
-    image,
-    char_name=char_name,
-    other_chars=other_chars,
-    timeout=60.0,
-    confidence=0.55,
+  selected = clickCharSelect(
+    image, char_name=char_name, timeout=60.0, confidence=0.50,
   )
-  if not selected:
-    print(f'[session] verified failed - fallback simple click ({char_name})')
-    selected = clickCharSelect(
-      image, char_name=char_name, timeout=30.0, confidence=0.50
-    )
   if not selected:
     print(f'[session] reconnect failed - {char_name} not found')
     return False
@@ -1800,11 +1780,11 @@ def loadSplashReference(path=SPLASH_REF_PATH):
 def waitForSplash(
     timeout=14,
     on_tick=None,
-    ratio=7.0,
-    match=0.91,
-    min_energy=0.08,
-    min_floor=0.02,
-    confirm_hits=2,
+    ratio=10.0,
+    match=0.7,
+    min_energy=0.0,
+    min_floor=0.0,
+    confirm_hits=1,
     ignore_seconds=1.5,
     ref_path=SPLASH_REF_PATH,
 ):

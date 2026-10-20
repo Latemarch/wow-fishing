@@ -6,20 +6,29 @@ import os
 import tkinter as tk
 import ctypes
 
-end_time = 20
+end_time = 9999
 limit = 10
 interference_limit = 3  # 보라 방해 패턴 연속 감지 시 로그아웃
-# 재접속 대기(분): 매 회차 동일
-RECONNECT_WAIT_RANGES = (
-  (10, 15),
+
+# 실패 한도(방해 포함) 도달 후, 로그아웃 전에 기다리는 시간
+FAIL_LOGOUT_WAIT_MIN = 5
+# 다음 캐릭이 마법사·주술사일 때 로그아웃 뒤 추가 대기(분)
+RECONNECT_EXTRA_WAIT_MIN = (5, 10)
+# 사제 낚시 시간. 끝나면 마법사로 재접속
+PRIEST_SESSION_HOURS = 2
+
+CHAR_IMAGES = {
+  'm': './imgs/mage.png',
+  's': './imgs/shamon.png',
+  'p': './imgs/priest.png',
+}
+# m 또는 s에서 로그아웃할 때 다음 캐릭 가중치
+RECONNECT_WEIGHTS = (
+  ('m', 4),
+  ('s', 4),
+  ('p', 2),
 )
-RECONNECT_CHARS = [
-  ('주술사', './imgs/shamon.png'),
-  ('마법사', './imgs/mage.png'),
-]
-# 매일 KST 07:00 마법사로 강제 재접속
-MAGE_RECONNECT_HOUR = 7
-MAGE_CHAR = ('마법사', './imgs/mage.png')
+START_CHAR = 'm'
 
 
 def create_search_border(region):
@@ -208,150 +217,110 @@ def resume_after_reconnect():
   print(f"[session] resume fishing until {next_shutdown.strftime('%Y-%m-%d %H:%M KST')}")
 
 
-def pick_reconnect_wait_minutes(attempt_index):
-  """매 재접속마다 10~15분 랜덤 대기."""
-  lo, hi = RECONNECT_WAIT_RANGES[0]
-  return random.randint(lo, hi)
+def _wait_minutes(minutes, label):
+  """대기 중 오버레이를 갱신한다. 세션 종료 시각이면 False."""
+  deadline = time.time() + minutes * 60
+  print(f'[session] {label} {minutes}min')
+  while time.time() < deadline:
+    if ftns.shutdown_if_kst_target(next_shutdown):
+      return False
+    overlay_root.update()
+    time.sleep(1)
+  return True
 
 
-def begin_reconnect(reason):
-  """로그아웃 + 랜덤 대기/캐릭 계획. True면 재접속 시도."""
-  global pending_reconnect
+def _pick_next_char(leaving):
+  """다음 캐릭터와 로그아웃 뒤 추가 대기(분)를 정한다."""
+  if leaving == 'p':
+    return 'm', 0
+  names, weights = zip(*RECONNECT_WEIGHTS)
+  picked = random.choices(names, weights=weights, k=1)[0]
+  if picked == 'p':
+    return picked, 0
+  lo, hi = RECONNECT_EXTRA_WAIT_MIN
+  return picked, random.randint(lo, hi)
 
-  ftns.saveScreen('./imgs/fail.png')
-  wait_minutes = pick_reconnect_wait_minutes(reconnect_count)
-  char_name, char_image = random.choice(RECONNECT_CHARS)
-  pending_reconnect = (wait_minutes, char_name, char_image)
+
+def reconnect(reason):
+  """로그아웃과 재접속을 한 곳에서 처리한다. True면 낚시를 이어간다.
+
+  실패 한도(방해 포함): 5분 대기 후 로그아웃.
+  마법사·주술사에서 나올 때 다음 캐릭은 마법사4:주술사4:사제2.
+  사제면 바로 접속, 마법사·주술사면 5–10분 더 기다린 뒤 접속.
+  사제 2시간 종료: 대기 없이 로그아웃 후 마법사로 접속.
+  """
+  global current_char, priest_until, reconnect_count
+
+  leaving = current_char
+  failure = reason != 'priest_2h'
+  if failure:
+    if not _wait_minutes(FAIL_LOGOUT_WAIT_MIN, '실패 한도, 로그아웃 전 대기'):
+      return False
+
+  next_name, extra_wait = _pick_next_char(leaving)
+  next_image = CHAR_IMAGES[next_name]
   elapsed = format_elapsed(time.time() - startedAt)
+  print(
+    f'[session] reconnect {leaving} -> {next_name} '
+    f'reason={reason} extra_wait={extra_wait}min'
+  )
   ftns.notifyTelegram(
     '낚시 중단 - 캐릭터 선택으로 이동합니다\n'
     f'시간: {ftns.now_kst_str()}\n'
     f'경과: {elapsed}\n'
     f'원인: {reason}\n'
-    f'재접속 #{reconnect_count + 1}\n'
-    f'로그아웃 후 {wait_minutes}분 대기 → {char_name} 재접속'
+    f'{leaving} → {next_name}\n'
+    f'로그아웃 후 추가 대기: {extra_wait}분\n'
+    f'재접속 #{reconnect_count + 1}'
   )
-  ftns.logoutWow('3')
-  print(
-    f'fail - logged out ({reason}), '
-    f'reconnect#{reconnect_count + 1} wait {wait_minutes}min then {char_name}, '
-    f'elapsed={elapsed}'
-  )
-  return True
-
-
-def try_reconnect_or_stop():
-  """실패 한도 후 재접속. True면 루프 continue, False면 break."""
-  global reconnect_count, pending_reconnect
-
-  if pending_reconnect is None:
-    if not begin_reconnect('reconnect_without_plan'):
-      return False
-
-  wait_minutes, char_name, char_image = pending_reconnect
-  print(
-    f'[session] reconnect plan #{reconnect_count + 1}: '
-    f'wait={wait_minutes}min char={char_name} image={char_image}'
-  )
-
-  if ftns.reconnectAfterFail(
-    image=char_image,
-    wait_minutes=wait_minutes,
-    char_name=char_name,
-    keep_alive_chars=RECONNECT_CHARS,
-    keep_alive_every_min=5,
-  ):
-    resume_after_reconnect()
-    reconnect_count += 1
-    pending_reconnect = None
-    ftns.notifyTelegram(
-      f'낚시 재개 ({char_name})\n'
-      f'시간: {ftns.now_kst_str()}\n'
-      f'재접속 횟수={reconnect_count}\n'
-      f'기준 합계={lastFishCount}\n'
-      f'세션 종료 예정={next_shutdown.strftime("%Y-%m-%d %H:%M KST")}'
-    )
-    return True
-
-  print('[session] reconnect failed - stop all')
-  return False
-
-
-def try_scheduled_mage_reconnect():
-  """KST 07:00이면 로그아웃 후 마법사로 재접속. True면 루프 continue."""
-  global next_mage_reconnect, pending_reconnect, reconnect_count
-
-  if datetime_now_kst() < next_mage_reconnect:
-    return False
-
-  char_name, char_image = MAGE_CHAR
-  target_str = next_mage_reconnect.strftime('%Y-%m-%d %H:%M KST')
-  print(f'[session] scheduled mage reconnect at {target_str}')
-  ftns.notifyTelegram(
-    '예정된 마법사 재접속\n'
-    f'시간: {ftns.now_kst_str()}\n'
-    f'예정: {target_str}\n'
-    f'로그아웃 후 마법사로 재접속'
-  )
-  pending_reconnect = None
   ftns.saveScreen('./imgs/fail.png')
   ftns.logoutWow('3')
 
-  ok = ftns.reconnectAfterFail(
-    image=char_image,
-    wait_minutes=0,
-    char_name=char_name,
-    keep_alive_chars=RECONNECT_CHARS,
+  if not ftns.reconnectAfterFail(
+    image=next_image,
+    wait_minutes=extra_wait,
+    char_name=next_name,
     keep_alive_every_min=5,
-  )
-  # 다음 날 07:00으로 갱신 (성공/실패 모두 — 반복 트리거 방지)
-  next_mage_reconnect = ftns.get_next_kst_clock(MAGE_RECONNECT_HOUR)
-  if not ok:
-    print('[session] scheduled mage reconnect failed')
+  ):
+    print('[session] reconnect failed - stop all')
     ftns.notifyTelegram(
-      f'마법사 재접속 실패\n시간: {ftns.now_kst_str()}\n'
-      f'다음 예정={next_mage_reconnect.strftime("%Y-%m-%d %H:%M KST")}'
+      f'재접속 실패 ({next_name})\n시간: {ftns.now_kst_str()}\n원인: {reason}'
     )
     return False
 
   resume_after_reconnect()
+  current_char = next_name
   reconnect_count += 1
+  if next_name == 'p':
+    priest_until = time.time() + PRIEST_SESSION_HOURS * 3600
+    print(f'[session] priest fishes for {PRIEST_SESSION_HOURS}h')
+  else:
+    priest_until = None
   ftns.notifyTelegram(
-    f'마법사 재접속 완료\n'
+    f'낚시 재개 ({next_name})\n'
     f'시간: {ftns.now_kst_str()}\n'
     f'재접속 횟수={reconnect_count}\n'
     f'기준 합계={lastFishCount}\n'
-    f'다음 마법사 재접속={next_mage_reconnect.strftime("%Y-%m-%d %H:%M KST")}'
-  )
-  print(
-    f'[session] next mage reconnect at '
-    f'{next_mage_reconnect.strftime("%Y-%m-%d %H:%M KST")}'
+    f'세션 종료 예정={next_shutdown.strftime("%Y-%m-%d %H:%M KST")}'
   )
   return True
-
-
-def datetime_now_kst():
-  from datetime import datetime
-  return datetime.now(ftns.KST)
 
 
 def mark_consecutive_fail(fail_count, reason, limit=limit):
   fail_count += 1
   print(f'[fish] consecutive fail {fail_count}/{limit} ({reason})')
   if fail_count >= limit:
-    begin_reconnect(reason)
-    return fail_count, True
-  return fail_count, False
+    return fail_count, reason
+  return fail_count, None
 
 
 def mark_interference_fail(fail_count, ratio, limit=interference_limit):
-  """보라 방해 패턴 연속 감지. 한도 도달 시 로그아웃(키 3)."""
+  """보라 방해 패턴 연속 감지. 한도 도달 시 재접속."""
   fail_count += 1
   print(f'[interference] consecutive {fail_count}/{limit} (purple_ratio={ratio:.3f})')
   if fail_count >= limit:
-    begin_reconnect(f'interference x{limit}')
-    return fail_count, True
-  return fail_count, False
+    return fail_count, f'interference x{limit}'
+  return fail_count, None
 
 
 def format_elapsed(seconds):
@@ -415,7 +384,8 @@ trycount = 0
 consecutiveFails = 0
 interferenceFails = 0
 reconnect_count = 0
-pending_reconnect = None
+current_char = START_CHAR
+priest_until = None
 startedAt = time.time()
 biteTime = time.time()
 mail_cooldown_until = 0
@@ -431,20 +401,22 @@ if lastRayCount is None:
 print(f'[ray-count] baseline={lastRayCount}')
 ftns.preloadEasyOcrAsync()
 next_shutdown = ftns.get_next_kst_shutdown(end_time)
-next_mage_reconnect = ftns.get_next_kst_clock(MAGE_RECONNECT_HOUR)
 print(f"[session] will end at {next_shutdown.strftime('%Y-%m-%d %H:%M KST')}")
-print(
-  f"[session] next mage reconnect at "
-  f"{next_mage_reconnect.strftime('%Y-%m-%d %H:%M KST')}"
-)
+print(f'[session] start character={current_char}')
 print(f'[vendor] next sell-all-junk in 30min')
 
 while True:
   if ftns.shutdown_if_kst_target(next_shutdown):
     break
 
-  if try_scheduled_mage_reconnect():
-    continue
+  if (
+    current_char == 'p'
+    and priest_until is not None
+    and time.time() >= priest_until
+  ):
+    if reconnect('priest_2h'):
+      continue
+    break
 
   overlay_root.update()
 
@@ -466,7 +438,7 @@ while True:
   if interfered:
     interferenceFails, stop = mark_interference_fail(interferenceFails, purple_ratio)
     if stop:
-      if try_reconnect_or_stop():
+      if reconnect(stop):
         continue
       break
     continue
@@ -477,23 +449,23 @@ while True:
   if not newImg:
     consecutiveFails, stop = mark_consecutive_fail(consecutiveFails, 'float_not_found')
     if stop:
-      if try_reconnect_or_stop():
+      if reconnect(stop):
         continue
       break
     continue
 
-  if not ftns.waitForSplash(timeout=18, on_tick=overlay_root.update):
+  if not ftns.waitForSplash(timeout=22, on_tick=overlay_root.update):
     consecutiveFails, stop = mark_consecutive_fail(consecutiveFails, 'splash_timeout')
     if stop:
-      if try_reconnect_or_stop():
+      if reconnect(stop):
         continue
       break
     continue
   pyautogui.click()
-  pyautogui.moveTo(x+10,y+120)
+  pyautogui.moveTo(x+10,y+70)
   time.sleep(0.1)
   pyautogui.click()
-  pyautogui.moveTo(x+10,y+130)
+  pyautogui.moveTo(x+10,y+110)
   time.sleep(0.1)
   pyautogui.click()
 
@@ -530,7 +502,7 @@ while True:
     )
     consecutiveFails, stop = mark_consecutive_fail(consecutiveFails, f'count={stuck}')
     if stop:
-      if try_reconnect_or_stop():
+      if reconnect(stop):
         continue
       break
 
