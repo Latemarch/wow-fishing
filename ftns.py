@@ -1019,6 +1019,49 @@ def _wait_match_any(paths, region=None, confidence=0.58, timeout=6.0, use_gray=T
   return None
 
 
+def press_esc_in_wow():
+  """Esc를 와우 창에만 보낸다. 전역 Esc는 이 PC에서 검색 창을 연다."""
+  hwnd = _wow_hwnd()
+  user32 = ctypes.windll.user32
+  vk = 0x1B
+  scan = user32.MapVirtualKeyW(vk, 0)
+  lparam_down = 1 | (scan << 16)
+  lparam_up = 1 | (scan << 16) | (1 << 30) | (1 << 31)
+  if hwnd:
+    user32.PostMessageW(hwnd, 0x0100, vk, lparam_down)
+    time.sleep(0.05)
+    user32.PostMessageW(hwnd, 0x0101, vk, lparam_up)
+    print(f'[mail] esc posted to wow hwnd={hwnd}')
+    return True
+  print('[mail] wow hwnd missing, skip esc')
+  return False
+
+
+def dismiss_start_menu():
+  """채팅 포커스를 게임 화면 클릭으로 벗긴다. Esc는 이 PC에서 검색 창을 연다."""
+  user32 = ctypes.windll.user32
+  key_up = 0x0002
+  extended = 0x0001
+  for vk in (0x11, 0xA2, 0xA3, 0x10, 0xA0, 0xA1, 0x12, 0xA4, 0xA5, 0x5B, 0x5C):
+    scan = user32.MapVirtualKeyW(vk, 0)
+    user32.keybd_event(vk, scan, key_up, 0)
+    user32.keybd_event(vk, scan, key_up | extended, 0)
+
+  left, top, width, height = _wow_client_rect()
+  x = left + max(30, min(120, width // 8))
+  y = top + max(30, min(120, height // 8))
+  pyautogui.click(x, y)
+  print(f'[mail] dismiss start click=({x}, {y})')
+
+
+def close_mail_ui():
+  """우편창을 Esc로 닫고, 검색 창이 뜨면 게임 클릭으로 닫는다."""
+  press_esc_in_wow()
+  time.sleep(0.25)
+  dismiss_start_menu()
+  time.sleep(0.2)
+
+
 def _paste_text(text):
   """한글은 키 이벤트로 입력되지 않아서 클립보드로 붙여넣는다."""
   import ctypes
@@ -1200,7 +1243,7 @@ def _find_mail_attach_mark():
 
 
 def sellAllJunk():
-  """키 4로 상인 대상 → 게임창 중앙 x+50,y+100 클릭 → 2초 → 키 6(잡템 일괄판매)."""
+  """키 4로 상인 대상 → 게임창 중앙 x+50,y+250 클릭 → 2초 → 키 6(잡템 일괄판매)."""
   print('[vendor] target NPC (4)')
   pyautogui.press('4')
   time.sleep(3.0)
@@ -1208,7 +1251,7 @@ def sellAllJunk():
   left, top, width, height = _wow_client_rect()
   cx, cy = left + width // 2, top + height // 2
   click_x = cx + 50
-  click_y = cy + 100
+  click_y = cy + 250
   print(
     f'[vendor] wow-client=({left}, {top}, {width}, {height}) '
     f'center=({cx}, {cy}) click=({click_x}, {click_y})'
@@ -1269,6 +1312,7 @@ def mailGoop(recipient='황장수'):
       )
     if tab is None:
       print('[mail] send tab not found')
+      close_mail_ui()
       return False
     tab_center, tab_score, tab_scale, tab_path = tab
 
@@ -1294,6 +1338,7 @@ def mailGoop(recipient='황장수'):
     click_xy = (int(goop[0]) + 14, int(goop[1]) + 14)
   if click_xy is None:
     print('[mail] goop not found in bags (yellow mark / template)')
+    close_mail_ui()
     return False
 
   attached = False
@@ -1316,7 +1361,7 @@ def mailGoop(recipient='황장수'):
 
   if not attached:
     print('[mail] attach confirm failed - skip send (empty mail blocked)')
-    pyautogui.press('esc')
+    close_mail_ui()
     time.sleep(0.3)
     return False
 
@@ -1337,6 +1382,7 @@ def mailGoop(recipient='황장수'):
     )
     if send is None:
       print('[mail] send button not found')
+      close_mail_ui()
       return False
     send_center, send_score, send_scale, send_path = send
 
@@ -1346,8 +1392,7 @@ def mailGoop(recipient='황장수'):
   _click_point(send_center, label='send-button')
   print(f'[mail] send button score={send_score:.3f} scale={send_scale:.2f}')
   time.sleep(1.2)
-  pyautogui.press('esc')
-  time.sleep(0.4)
+  close_mail_ui()
   print('[mail] done')
   return True
 
@@ -1780,9 +1825,9 @@ def loadSplashReference(path=SPLASH_REF_PATH):
 def waitForSplash(
     timeout=14,
     on_tick=None,
-    ratio=10.0,
+    ratio=8.0,
     match=0.7,
-    min_energy=0.0,
+    min_energy=0.05,
     min_floor=0.0,
     confirm_hits=1,
     ignore_seconds=1.5,

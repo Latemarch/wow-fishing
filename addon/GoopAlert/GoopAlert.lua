@@ -40,6 +40,15 @@ local function RayTotal()
 end
 
 local function ContainerItemID(bag, slot)
+  if C_Container and C_Container.GetContainerItemInfo then
+    local info = C_Container.GetContainerItemInfo(bag, slot)
+    if type(info) == "table" and info.itemID then
+      return info.itemID
+    end
+    if type(info) == "number" then
+      return info
+    end
+  end
   if C_Container and C_Container.GetContainerItemID then
     return C_Container.GetContainerItemID(bag, slot)
   end
@@ -272,17 +281,77 @@ local function BagIndexRange()
   return first, last
 end
 
+local function ButtonSlot(btn)
+  if btn.GetSlotID then
+    return btn:GetSlotID()
+  end
+  if btn.GetID then
+    return btn:GetID()
+  end
+  return nil
+end
+
+local function ButtonMatchesGoop(btn)
+  if not btn or not btn.IsShown or not btn:IsShown() then
+    return false
+  end
+  local bag = btn.GetBagID and btn:GetBagID()
+  local slot = ButtonSlot(btn)
+  if bag == nil or not slot or slot < 1 then
+    return false
+  end
+  return ContainerItemID(bag, slot) == GOOP_ITEM_ID
+end
+
+local function VisitItemButtons(frame, found)
+  if not frame or found[1] then
+    return
+  end
+  if frame.Items then
+    for _, btn in pairs(frame.Items) do
+      if ButtonMatchesGoop(btn) then
+        found[1] = btn
+        return
+      end
+    end
+  end
+  if frame.ScrollBox and frame.ScrollBox.ForEachFrame then
+    frame.ScrollBox:ForEachFrame(function(btn)
+      if not found[1] and ButtonMatchesGoop(btn) then
+        found[1] = btn
+      end
+    end)
+  end
+end
+
 local function FindGoopItemButton()
+  local found = {}
+  VisitItemButtons(ContainerFrameCombinedBags, found)
+  if found[1] then
+    return found[1]
+  end
+  local frameCount = NUM_CONTAINER_FRAMES or 13
+  for i = 1, frameCount do
+    local frame = _G["ContainerFrame" .. i]
+    if frame and frame:IsShown() then
+      VisitItemButtons(frame, found)
+      if found[1] then
+        return found[1]
+      end
+    end
+  end
+
+  if not ContainerFrameUtil_GetItemButtonAndContainer then
+    return nil
+  end
   local first, last = BagIndexRange()
   for bag = first, last do
     local slots = ContainerNumSlots(bag)
     for slot = 1, slots do
       if ContainerItemID(bag, slot) == GOOP_ITEM_ID then
-        if ContainerFrameUtil_GetItemButtonAndContainer then
-          local btn = ContainerFrameUtil_GetItemButtonAndContainer(bag, slot)
-          if btn and btn:IsVisible() then
-            return btn
-          end
+        local btn = ContainerFrameUtil_GetItemButtonAndContainer(bag, slot)
+        if btn and btn:IsShown() then
+          return btn
         end
       end
     end
@@ -290,17 +359,30 @@ local function FindGoopItemButton()
   return nil
 end
 
+local function AnyBagShown()
+  if ContainerFrameCombinedBags and ContainerFrameCombinedBags:IsShown() then
+    return true
+  end
+  local frameCount = NUM_CONTAINER_FRAMES or 13
+  for i = 1, frameCount do
+    local frame = _G["ContainerFrame" .. i]
+    if frame and frame:IsShown() then
+      return true
+    end
+  end
+  return false
+end
+
 local function EnsureBagsOpen()
+  if AnyBagShown() then
+    return
+  end
   if OpenAllBags then
     OpenAllBags()
   end
 end
 
 local function UpdateBagGoopMark()
-  if not (MailFrame and MailFrame:IsShown()) then
-    bagGoopMark:Hide()
-    return
-  end
   if MailHasGoopAttached() then
     bagGoopMark:Hide()
     return
@@ -309,8 +391,14 @@ local function UpdateBagGoopMark()
     bagGoopMark:Hide()
     return
   end
+  if not AnyBagShown() then
+    if MailFrame and MailFrame:IsShown() then
+      EnsureBagsOpen()
+    end
+    bagGoopMark:Hide()
+    return
+  end
 
-  EnsureBagsOpen()
   local btn = FindGoopItemButton()
   if btn then
     AnchorMark(bagGoopMark, btn, "TOPLEFT")
@@ -344,6 +432,26 @@ local function RefreshMailDelayed()
   end)
 end
 
+local hookedBagFrames = {}
+
+local function HookBagFrames()
+  local frames = { ContainerFrameCombinedBags }
+  local frameCount = NUM_CONTAINER_FRAMES or 13
+  for i = 1, frameCount do
+    frames[#frames + 1] = _G["ContainerFrame" .. i]
+  end
+  for _, frame in ipairs(frames) do
+    if frame and not hookedBagFrames[frame] then
+      hookedBagFrames[frame] = true
+      frame:HookScript("OnShow", function()
+        C_Timer.After(0.05, UpdateBagGoopMark)
+        C_Timer.After(0.25, UpdateBagGoopMark)
+        C_Timer.After(0.6, UpdateBagGoopMark)
+      end)
+    end
+  end
+end
+
 local events = CreateFrame("Frame")
 events:RegisterEvent("PLAYER_ENTERING_WORLD")
 events:RegisterEvent("BAG_UPDATE_DELAYED")
@@ -354,6 +462,7 @@ events:RegisterEvent("MAIL_SEND_INFO_UPDATE")
 events:RegisterEvent("MAIL_FAILED")
 events:RegisterEvent("MAIL_SEND_SUCCESS")
 events:SetScript("OnEvent", function(_, event)
+  HookBagFrames()
   if event == "MAIL_SHOW" then
     EnsureBagsOpen()
     Refresh()
@@ -385,12 +494,7 @@ if MailFrame then
   end)
 end
 
-if ContainerFrameCombinedBags then
-  ContainerFrameCombinedBags:HookScript("OnShow", function()
-    C_Timer.After(0.05, UpdateBagGoopMark)
-    C_Timer.After(0.2, UpdateBagGoopMark)
-  end)
-end
+HookBagFrames()
 
 SLASH_GOOPALERT1 = "/goopalert"
 SlashCmdList.GOOPALERT = function()

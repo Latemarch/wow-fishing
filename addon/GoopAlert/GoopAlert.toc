@@ -2,6 +2,6 @@
 ## Title: GoopAlert
 ## Notes: 끈적이 우편알림 + 대해가오리/낚시 개수 막대
 ## Author: wow-fishing
-## Version: 1.3.9
+## Version: 1.4.0
 
 GoopAlert.lua

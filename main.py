@@ -14,7 +14,9 @@ interference_limit = 3  # 보라 방해 패턴 연속 감지 시 로그아웃
 FAIL_LOGOUT_WAIT_MIN = 5
 # 다음 캐릭이 마법사·주술사일 때 로그아웃 뒤 추가 대기(분)
 RECONNECT_EXTRA_WAIT_MIN = (5, 10)
-# 사제 낚시 시간. 끝나면 마법사로 재접속
+# m/s 방해 로그아웃 후 p 재접속까지 대기(분)
+INTERFERENCE_PRIEST_WAIT_MIN = 1
+# 사제 낚시 시간(시간). 끝나면 m 또는 s로 재접속
 PRIEST_SESSION_HOURS = 2
 
 CHAR_IMAGES = {
@@ -217,6 +219,14 @@ def resume_after_reconnect():
   print(f"[session] resume fishing until {next_shutdown.strftime('%Y-%m-%d %H:%M KST')}")
 
 
+def sell_junk_now():
+  """잡템을 팔고 다음 판매 시각을 30분 뒤로 민다."""
+  global next_vendor_sell_at
+  ftns.sellAllJunk()
+  next_vendor_sell_at = time.time() + 30 * 60
+  print('[vendor] next sell-all-junk in 30min')
+
+
 def _wait_minutes(minutes, label):
   """대기 중 오버레이를 갱신한다. 세션 종료 시각이면 False."""
   deadline = time.time() + minutes * 60
@@ -229,8 +239,12 @@ def _wait_minutes(minutes, label):
   return True
 
 
-def _pick_next_char(leaving):
+def _pick_next_char(leaving, reason):
   """다음 캐릭터와 로그아웃 뒤 추가 대기(분)를 정한다."""
+  if reason.startswith('interference') and leaving in ('m', 's'):
+    return 'p', INTERFERENCE_PRIEST_WAIT_MIN
+  if reason == 'priest_2h':
+    return random.choice(('m', 's')), 0
   if leaving == 'p':
     return 'm', 0
   names, weights = zip(*RECONNECT_WEIGHTS)
@@ -244,10 +258,10 @@ def _pick_next_char(leaving):
 def reconnect(reason):
   """로그아웃과 재접속을 한 곳에서 처리한다. True면 낚시를 이어간다.
 
-  실패 한도(방해 포함): 5분 대기 후 로그아웃.
-  마법사·주술사에서 나올 때 다음 캐릭은 마법사4:주술사4:사제2.
-  사제면 바로 접속, 마법사·주술사면 5–10분 더 기다린 뒤 접속.
-  사제 2시간 종료: 대기 없이 로그아웃 후 마법사로 접속.
+  실패 한도: 5분 대기 후 로그아웃.
+  m/s에서 방해 한도면 5분 뒤 로그아웃하고 1분 후 p로 접속. p는 PRIEST_SESSION_HOURS 뒤 m 또는 s.
+  그 외 m/s 로그아웃은 m4:s4:p2.
+  p면 바로 접속, m/s면 5–10분 더 기다린 뒤 접속.
   """
   global current_char, priest_until, reconnect_count
 
@@ -257,7 +271,7 @@ def reconnect(reason):
     if not _wait_minutes(FAIL_LOGOUT_WAIT_MIN, '실패 한도, 로그아웃 전 대기'):
       return False
 
-  next_name, extra_wait = _pick_next_char(leaving)
+  next_name, extra_wait = _pick_next_char(leaving, reason)
   next_image = CHAR_IMAGES[next_name]
   elapsed = format_elapsed(time.time() - startedAt)
   print(
@@ -294,6 +308,7 @@ def reconnect(reason):
   if next_name == 'p':
     priest_until = time.time() + PRIEST_SESSION_HOURS * 3600
     print(f'[session] priest fishes for {PRIEST_SESSION_HOURS}h')
+    sell_junk_now()
   else:
     priest_until = None
   ftns.notifyTelegram(
@@ -403,7 +418,12 @@ ftns.preloadEasyOcrAsync()
 next_shutdown = ftns.get_next_kst_shutdown(end_time)
 print(f"[session] will end at {next_shutdown.strftime('%Y-%m-%d %H:%M KST')}")
 print(f'[session] start character={current_char}')
-print(f'[vendor] next sell-all-junk in 30min')
+if current_char == 'p':
+  priest_until = time.time() + PRIEST_SESSION_HOURS * 3600
+  print(f'[session] priest fishes for {PRIEST_SESSION_HOURS}h')
+  sell_junk_now()
+else:
+  print(f'[vendor] next sell-all-junk in 30min')
 
 while True:
   if ftns.shutdown_if_kst_target(next_shutdown):
@@ -508,9 +528,7 @@ while True:
 
   # 30분마다 회색 잡템 상인 판매 (4 → 중앙+20 → 1초 → 6)
   if time.time() >= next_vendor_sell_at:
-    ftns.sellAllJunk()
-    next_vendor_sell_at = time.time() + 30 * 60
-    print('[vendor] next sell-all-junk in 30min')
+    sell_junk_now()
 
   # 끈적이만 우편 (대해가오리는 우편 없음)
   if check_goop_alert():
